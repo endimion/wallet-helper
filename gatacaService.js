@@ -3,6 +3,7 @@ import isJwtTokenExpired from "jwt-check-expiry";
 import axios from "axios";
 import consts from "./constants.js";
 import { v4 as uuidv4 } from "uuid";
+import { pollResult } from "./utils.js";
 
 // QR Generation
 import qr from "qr-image";
@@ -196,178 +197,98 @@ const makeGatacaVerificationRequestTicket = async (
 };
 
 const pollForVerificationResult = async (gatacaSessionId) => {
-  return new Promise((res, rej) => {
-    let pollingIntervalId = setInterval(async () => {
-      let basicAuthString =
-        process.env.GATACA_APP_ACADEMIC_ID +
-        ":" +
-        process.env.GATACA_PASS_ACADEMIC_ID;
-      let buff = new Buffer(basicAuthString);
-      let base64data = buff.toString("base64");
-      let options = {
-        method: "POST",
-        url: constants.GATACA_CERTIFY_URL,
-        headers: {
-          Authorization: `Basic ${base64data}`,
-        },
-      };
-      let gatacaAuthToken = await getSessionData("gataca_jwt", "gataca_jwt");
-      if (!gatacaAuthToken || isJwtTokenExpired.default(gatacaAuthToken)) {
-        // console.log("will get a new GATACA API tokent");
-        const gatacaTokenResponse = await axios.request(options);
-        gatacaAuthToken = gatacaTokenResponse.headers.token;
-        setOrUpdateSessionData("gataca_jwt", "gataca_jwt", gatacaAuthToken);
-      }
+  // return new Promise((res, rej) => {
+  //   let pollingIntervalId = setInterval(async () => {
+  //     let basicAuthString =
+  //       process.env.GATACA_APP_ACADEMIC_ID +
+  //       ":" +
+  //       process.env.GATACA_PASS_ACADEMIC_ID;
+  //     let buff = new Buffer(basicAuthString);
+  //     let base64data = buff.toString("base64");
+  //     let options = {
+  //       method: "POST",
+  //       url: constants.GATACA_CERTIFY_URL,
+  //       headers: {
+  //         Authorization: `Basic ${base64data}`,
+  //       },
+  //     };
+  //     let gatacaAuthToken = await getSessionData("gataca_jwt", "gataca_jwt");
+  //     if (!gatacaAuthToken || isJwtTokenExpired.default(gatacaAuthToken)) {
+  //       // console.log("will get a new GATACA API tokent");
+  //       const gatacaTokenResponse = await axios.request(options);
+  //       gatacaAuthToken = gatacaTokenResponse.headers.token;
+  //       setOrUpdateSessionData("gataca_jwt", "gataca_jwt", gatacaAuthToken);
+  //     }
 
-      options = {
-        method: "GET",
-        url: `${constants.GATACA_CHECK_VERIFICATION_STATUS_URL}/${gatacaSessionId}`,
-        headers: {
-          Authorization: `jwt ${gatacaAuthToken}`,
-          "Content-Type": "application/json",
-        },
-      };
+  //     options = {
+  //       method: "GET",
+  //       url: `${constants.GATACA_CHECK_VERIFICATION_STATUS_URL}/${gatacaSessionId}`,
+  //       headers: {
+  //         Authorization: `jwt ${gatacaAuthToken}`,
+  //         "Content-Type": "application/json",
+  //       },
+  //     };
 
-      axios
-        .request(options)
-        .then(function (response) {
-          //TODO add a time out for this for expired sessions!!!
-          console.log(
-            `gatacaservice.js check verification status result for session ${gatacaSessionId}:`
-          );
-          if (response.status === 200 && response.data) {
-            // console.log(response.data);
-            let credentialsPresented = response.data.data.verifiableCredential; // this is an array
-            let allAttributesOfUser = {};
-            credentialsPresented.forEach((cred) => {
-              for (var name in cred.credentialSubject) {
-                // console.log(name + "=" + valuesJSON[name]);
-                if (name !== "id") {
-                  allAttributesOfUser[name] = cred.credentialSubject[name];
-                }
-              }
-            });
+  //     axios
+  //       .request(options)
+  //       .then(function (response) {
+  //         //TODO add a time out for this for expired sessions!!!
+  //         console.log(
+  //           `gatacaservice.js check verification status result for session ${gatacaSessionId}:`
+  //         );
+  //         if (response.status === 200 && response.data) {
+  //           // console.log(response.data);
+  //           let credentialsPresented = response.data.data.verifiableCredential; // this is an array
+  //           let allAttributesOfUser = {};
+  //           credentialsPresented.forEach((cred) => {
+  //             for (var name in cred.credentialSubject) {
+  //               // console.log(name + "=" + valuesJSON[name]);
+  //               if (name !== "id") {
+  //                 allAttributesOfUser[name] = cred.credentialSubject[name];
+  //               }
+  //             }
+  //           });
 
-            clearInterval(pollingIntervalId);
-            res(allAttributesOfUser);
-          } else {
-            if (response.status === 204) console.log("no ready");
-            else {
-              clearInterval(pollingIntervalId);
-              rej("errror1");
-            }
-          }
-        })
-        .catch(function (error) {
-          console.log("ERROR");
-          if (error.response) console.log(error.response);
-          clearInterval(pollingIntervalId);
-          rej(error);
-        });
-    }, 3000);
+  //           clearInterval(pollingIntervalId);
+  //           res(allAttributesOfUser);
+  //         } else {
+  //           if (response.status === 204) console.log("no ready");
+  //           else {
+  //             clearInterval(pollingIntervalId);
+  //             rej("errror1");
+  //           }
+  //         }
+  //       })
+  //       .catch(function (error) {
+  //         console.log("ERROR");
+  //         if (error.response) console.log(error.response);
+  //         clearInterval(pollingIntervalId);
+  //         rej(error);
+  //       });
+  //   }, 3000);
 
-    //sto pollin after 2 minutes for specific sesionId
-    setTimeout(() => {
-      clearInterval(pollingIntervalId);
-      console.log("will stop polling for " + gatacaSessionId);
-      rej("timeout 2 mins");
-    }, 120000);
-  });
+  //   //sto pollin after 2 minutes for specific sesionId
+  //   setTimeout(() => {
+  //     clearInterval(pollingIntervalId);
+  //     console.log("will stop polling for " + gatacaSessionId);
+  //     rej("timeout 2 mins");
+  //   }, 120000);
+  // });
+  console.log("pollAcademicIDVerificationResult");
+  let gatacaUser = process.env.GATACA_APP_ACADEMIC_ID
+  let gatacaPass = process.env.GATACA_PASS_ACADEMIC_ID
+  let sessionTokenName = "gataca_jwt"
+  return pollResult(gatacaSessionId,gatacaUser,gatacaPass,sessionTokenName)
+  
 };
 
 const pollForTicketVerificationResult = async (gatacaSessionId) => {
   console.log("pollForTicketVerificationResult");
-  return new Promise((resolve, rej) => {
-    let pollingIntervalId = setInterval(async () => {
-      let basicAuthString =
-        process.env.GATACA_APP_TICKET_ERUA +
-        ":" +
-        process.env.GATACA_PASS_TICKET_ERUA;
-      let buff = new Buffer(basicAuthString);
-      let base64data = buff.toString("base64");
-      let options = {
-        method: "POST",
-        url: constants.GATACA_CERTIFY_URL,
-        headers: {
-          Authorization: `Basic ${base64data}`,
-        },
-      };
-      let gatacaAuthToken = await getSessionData(
-        "gataca_jwt_ticket_erua",
-        "gataca_jwt"
-      );
-      if (!gatacaAuthToken || isJwtTokenExpired.default(gatacaAuthToken)) {
-        // console.log("will get a new GATACA API tokent");
-        try {
-          const gatacaTokenResponse = await axios.request(options);
-          gatacaAuthToken = gatacaTokenResponse.headers.token;
-          setOrUpdateSessionData(
-            "gataca_jwt_ticket_erua",
-            "gataca_jwt",
-            gatacaAuthToken
-          );
-        } catch (error) {
-          console.log("GATACA BASIC AUTH ERROR");
-          if (error.response && error.response.data)
-            console.log(error.response).data;
-          clearInterval(pollingIntervalId);
-          rej(error);
-        }
-      }
-
-      options = {
-        method: "GET",
-        url: `${constants.GATACA_CHECK_VERIFICATION_STATUS_URL}/${gatacaSessionId}`,
-        headers: {
-          Authorization: `jwt ${gatacaAuthToken}`,
-          "Content-Type": "application/json",
-        },
-      };
-
-      axios
-        .request(options)
-        .then(function (response) {
-          console.log(
-            `gatacaservice.js pollForTicketVerificationResult:: check verification status result for session ${gatacaSessionId}`
-          );
-          if (response.status === 200 && response.data) {
-            // console.log(response.data);
-            let credentialsPresented = response.data.data.verifiableCredential; // this is an array
-            let allAttributesOfUser = {};
-            credentialsPresented.forEach((cred) => {
-              for (var name in cred.credentialSubject) {
-                // console.log(name + "=" + valuesJSON[name]);
-                if (name !== "id") {
-                  allAttributesOfUser[name] = cred.credentialSubject[name];
-                }
-              }
-            });
-            clearInterval(pollingIntervalId);
-            resolve(allAttributesOfUser);
-          } else {
-            if (response.status === 204) console.log("no ready");
-            else {
-              clearInterval(pollingIntervalId);
-              rej("errror2");
-            }
-          }
-        })
-        .catch(function (error) {
-          console.log("ERROR2");
-          if (error.response && error.response.data)
-            console.log(error.response).data;
-          clearInterval(pollingIntervalId);
-          rej(error);
-        });
-    }, 3000);
-
-    //sto pollin after 2 minutes for specific sesionId
-    setTimeout(() => {
-      clearInterval(pollingIntervalId);
-      console.log("will stop polling for " + gatacaSessionId);
-      rej("timeout 2 mins");
-    }, 120000);
-  });
+  let gatacaUser = process.env.GATACA_APP_TICKET_ERUA
+  let gatacaPass = process.env.GATACA_PASS_TICKET_ERUA
+  let sessionTokenName = "gataca_jwt_ticket_erua"
+  return pollResult(gatacaSessionId,gatacaUser,gatacaPass,sessionTokenName)
+  
 };
 
 const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
