@@ -3,12 +3,7 @@ import isJwtTokenExpired from "jwt-check-expiry";
 import axios from "axios";
 import consts from "./constants.js";
 import { v4 as uuidv4 } from "uuid";
-import { pollResult, verificationRequest } from "./utils.js";
-
-// QR Generation
-import qr from "qr-image";
-import imageDataURI from "image-data-uri";
-import { streamToBuffer } from "@jorgeferrero/stream-to-buffer";
+import { pollResult, verificationRequest, basicAuthToken } from "./utils.js";
 
 let constants = consts.consts;
 
@@ -46,92 +41,6 @@ const makeGatacaVerificationRequestTicket = async (
     gatacaPass,
     sessionTokenName
   );
-
-  // return new Promise(async (res, rej) => {
-  //   let basicAuthString =
-  //     process.env.GATACA_APP_TICKET + ":" + process.env.GATACA_PASS_TICKET;
-  //   let buff = new Buffer(basicAuthString);
-  //   let base64data = buff.toString("base64");
-  //   console.log(base64data);
-  //   let options = {
-  //     method: "POST",
-  //     url: constants.GATACA_CERTIFY_URL,
-  //     headers: {
-  //       Authorization: `Basic ${base64data}`,
-  //     },
-  //   };
-
-  //   try {
-  //     // by setting the sessionId to "gataca_jwt" same as the variable this becomes a globaly accessible cached value
-  //     // so all calls will use the same token until its expired
-  //     let gatacaAuthToken = await getSessionData(
-  //       "gataca_jwt_ticket",
-  //       "gataca_jwt"
-  //     );
-  //     if (!gatacaAuthToken || isJwtTokenExpired.default(gatacaAuthToken)) {
-  //       const gatacaTokenResponse = await axios.request(options);
-  //       gatacaAuthToken = gatacaTokenResponse.headers.token;
-  //       setOrUpdateSessionData(
-  //         "gataca_jwt_ticket",
-  //         "gataca_jwt",
-  //         gatacaAuthToken
-  //       );
-  //     }
-
-  //     // request verification
-  //     options = {
-  //       method: "POST",
-  //       url: constants.GATACA_CREATE_VERIFICATION_SESSION_URL,
-  //       headers: {
-  //         "Content-Type": "application/json",
-  //         Authorization: `jwt ${gatacaAuthToken}`,
-  //       },
-  //       data: { ssiConfigId: verificationTemplate },
-  //     };
-  //     axios
-  //       .request(options)
-  //       .then(async function (response) {
-  //         console.log("VERIFICATION SESSION IS:" + response.data.id);
-  //         let verificationSessionId = response.data.id;
-  //         let buff = new Buffer(
-  //           encodeURIComponent("https://connect.gataca.io")
-  //         );
-  //         let base64Callbackdata = buff.toString("base64");
-
-  //         let qrPartialData =
-  //           "https://gataca.page.link/scan?session=" +
-  //           verificationSessionId +
-  //           "&callback=" +
-  //           base64Callbackdata;
-
-  //         let qrData =
-  //           "https://gataca.page.link/?apn=com.gatacaapp&ibi=com.gataca.wallet&link=" +
-  //           encodeURIComponent(qrPartialData);
-
-  //         //   console.log(qrData);
-
-  //         let code = qr.image(qrData, {
-  //           type: "png",
-  //           ec_level: "H",
-  //           size: 10,
-  //           margin: 10,
-  //         });
-  //         let mediaType = "PNG";
-  //         let encodedQR = imageDataURI.encode(
-  //           await streamToBuffer(code),
-  //           mediaType
-  //         );
-  //         res({ qr: encodedQR, gatacaSession: verificationSessionId });
-  //       })
-  //       .catch(function (error) {
-  //         console.error(error);
-  //         rej({ error: error });
-  //       });
-  //   } catch (error) {
-  //     console.error(error);
-  //     rej({ error: error });
-  //   }
-  // });
 };
 
 const pollForVerificationResult = async (gatacaSessionId) => {
@@ -152,12 +61,12 @@ const pollForTicketVerificationResult = async (gatacaSessionId) => {
 
 const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
   let credentialData;
-  let basicAuthString;
+  let basicAuthStr;
   if (issueTemplate === "eruaID") {
-    basicAuthString =
-      process.env.GATACA_APP_ACADEMIC_ID +
-      ":" +
-      process.env.GATACA_PASS_ACADEMIC_ID;
+    basicAuthStr = basicAuthToken(
+      process.env.GATACA_APP_ACADEMIC_ID,
+      process.env.GATACA_PASS_ACADEMIC_ID
+    );
     credentialData = [
       {
         credentialSubject: {
@@ -184,27 +93,11 @@ const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
     issueTemplate === "workshop-ticket-ANIMA SYROS" ||
     issueTemplate === "workshop-ticket-Anima_Syros 2023"
   ) {
-    /*
-              userData: {
-            communityUserIdentifier: "triantafyllou.nid702ed58-b8d1-4ca5-918c-94193a10d3ec",
-            givenName: "Nikos",
-            familyName: "Triantafyllou",
-            emailAddress: "triantafyllou.ni@aegean.gr",
-          }
-          userData: 
-          {
-            name: "Nikos",
-            surname: "Triantafyllou",
-            workshops: [
-              "ANIMA SYROS",
-            ],
-          }
-
-    */
-    //credentialData=...
-    console.log(userData);
-    basicAuthString =
-      process.env.GATACA_APP_TICKET + ":" + process.env.GATACA_PASS_TICKET;
+    // console.log(userData);
+    basicAuthStr = basicAuthToken(
+      process.env.GATACA_APP_TICKET,
+      process.env.GATACA_PASS_TICKET
+    );
 
     credentialData = [
       {
@@ -228,13 +121,11 @@ const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
   }
 
   return new Promise(async (res, rej) => {
-    let buff = new Buffer(basicAuthString);
-    let base64data = buff.toString("base64");
     let options = {
       method: "POST",
       url: constants.GATACA_CERTIFY_URL,
       headers: {
-        Authorization: `Basic ${base64data}`,
+        Authorization: `Basic ${basicAuthStr}`,
       },
     };
     let gatacaAuthToken = await getSessionData("gataca_jwt", "gataca_jwt");

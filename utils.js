@@ -2,8 +2,17 @@ import { getSessionData, setOrUpdateSessionData } from "./redisService.js";
 import isJwtTokenExpired from "jwt-check-expiry";
 import axios from "axios";
 import consts from "./constants.js";
+import qr from "qr-image";
+import imageDataURI from "image-data-uri";
+import { streamToBuffer } from "@jorgeferrero/stream-to-buffer";
 
 let constants = consts.consts;
+
+function basicAuthToken(gatacaUser, gatacaPass) {
+  let basicAuthString = gatacaUser + ":" + gatacaPass;
+  let buff = new Buffer(basicAuthString);
+  return  buff.toString("base64");
+}
 
 async function pollResult(
   gatacaSessionId,
@@ -13,14 +22,11 @@ async function pollResult(
 ) {
   return new Promise((resolve, rej) => {
     let pollingIntervalId = setInterval(async () => {
-      let basicAuthString = gatacaUser + ":" + gatacaPass;
-      let buff = new Buffer(basicAuthString);
-      let base64data = buff.toString("base64");
       let options = {
         method: "POST",
         url: constants.GATACA_CERTIFY_URL,
         headers: {
-          Authorization: `Basic ${base64data}`,
+          Authorization: `Basic ${basicAuthToken(gatacaUser,gatacaPass)}`,
         },
       };
       let gatacaAuthToken = await getSessionData(
@@ -107,22 +113,21 @@ async function verificationRequest(
   sessionTokenName
 ) {
   return new Promise(async (res, rej) => {
-    let basicAuthString = gatacaUser + ":" + gatacaPass;
-    let buff = new Buffer(basicAuthString);
-    let base64data = buff.toString("base64");
-    console.log(base64data);
     let options = {
       method: "POST",
       url: constants.GATACA_CERTIFY_URL,
       headers: {
-        Authorization: `Basic ${base64data}`,
+        Authorization: `Basic ${basicAuthToken(gatacaUser,gatacaPass)}`,
       },
     };
 
     try {
       // by setting the sessionId to "gataca_jwt" same as the variable this becomes a globaly accessible cached value
       // so all calls will use the same token until its expired
-      let gatacaAuthToken = await getSessionData(sessionTokenName, "gataca_jwt");
+      let gatacaAuthToken = await getSessionData(
+        sessionTokenName,
+        "gataca_jwt"
+      );
       if (!gatacaAuthToken || isJwtTokenExpired.default(gatacaAuthToken)) {
         const gatacaTokenResponse = await axios.request(options);
         gatacaAuthToken = gatacaTokenResponse.headers.token;
@@ -185,4 +190,4 @@ async function verificationRequest(
   });
 }
 
-export { pollResult, verificationRequest };
+export { pollResult, verificationRequest, basicAuthToken };
