@@ -3,7 +3,11 @@ import isJwtTokenExpired from "jwt-check-expiry";
 import axios from "axios";
 import consts from "./constants.js";
 import { v4 as uuidv4 } from "uuid";
-import { pollResult, verificationRequest, basicAuthToken } from "./utils.js";
+import {
+  basicAuthToken,
+  verificationRequestOIDC,
+  pollResultOIDC,
+} from "./utils.js";
 
 let constants = consts.consts;
 
@@ -17,7 +21,7 @@ const makeGatacaVerificationRequest = async (
   let gatacaUser = process.env.GATACA_APP_ACADEMIC_ID;
   let gatacaPass = process.env.GATACA_PASS_ACADEMIC_ID;
   let sessionTokenName = "gataca_jwt";
-  return verificationRequest(
+  return verificationRequestOIDC(
     verificationTemplate,
     gatacaUser,
     gatacaPass,
@@ -35,7 +39,7 @@ const makeGatacaVerificationRequestTicket = async (
   let gatacaUser = process.env.GATACA_APP_TICKET;
   let gatacaPass = process.env.GATACA_PASS_TICKET;
   let sessionTokenName = "gataca_jwt_ticket";
-  return verificationRequest(
+  return verificationRequestOIDC(
     verificationTemplate,
     gatacaUser,
     gatacaPass,
@@ -43,30 +47,77 @@ const makeGatacaVerificationRequestTicket = async (
   );
 };
 
-const pollForVerificationResult = async (gatacaSessionId) => {
+const makeGatacaVerificationRequestStdAndAlliance = async (
+  verificationTemplate //MyAcademicID_Verification
+) => {
+  console.log(
+    "gatacaService.js /makeGatacaVerificationRequestStdAndAlliance for " +
+      verificationTemplate
+  );
+  let gatacaUser = process.env.GATACA_APP_STD_ALL;
+  let gatacaPass = process.env.GATACA_PASS_STD_ALL;
+  let sessionTokenName = "gataca_jwt_std_all";
+  return verificationRequestOIDC(
+    verificationTemplate,
+    gatacaUser,
+    gatacaPass,
+    sessionTokenName
+  );
+};
+
+
+
+// const pollForVerificationResult = async (gatacaSessionId) => {
+//   console.log("pollAcademicIDVerificationResult");
+//   let gatacaUser = process.env.GATACA_APP_ACADEMIC_ID;
+//   let gatacaPass = process.env.GATACA_PASS_ACADEMIC_ID;
+//   let sessionTokenName = "gataca_jwt";
+//   return pollResult(gatacaSessionId, gatacaUser, gatacaPass, sessionTokenName);
+// };
+const pollForVerificationResultOIDC = async (gatacaSessionId) => {
   console.log("pollAcademicIDVerificationResult");
   let gatacaUser = process.env.GATACA_APP_ACADEMIC_ID;
   let gatacaPass = process.env.GATACA_PASS_ACADEMIC_ID;
   let sessionTokenName = "gataca_jwt";
-  return pollResult(gatacaSessionId, gatacaUser, gatacaPass, sessionTokenName);
+  return pollResultOIDC(
+    gatacaSessionId,
+    gatacaUser,
+    gatacaPass,
+    sessionTokenName
+  );
 };
 
-const pollForTicketVerificationResult = async (gatacaSessionId) => {
+// const pollForTicketVerificationResult = async (gatacaSessionId) => {
+//   console.log("pollForTicketVerificationResult");
+//   let gatacaUser = process.env.GATACA_APP_TICKET_ERUA;
+//   let gatacaPass = process.env.GATACA_PASS_TICKET_ERUA;
+//   let sessionTokenName = "gataca_jwt_ticket_erua";
+//   return pollResult(gatacaSessionId, gatacaUser, gatacaPass, sessionTokenName);
+// };
+
+const pollForTicketVerificationResultOIDC = async (gatacaSessionId) => {
   console.log("pollForTicketVerificationResult");
-  let gatacaUser = process.env.GATACA_APP_TICKET_ERUA;
-  let gatacaPass = process.env.GATACA_PASS_TICKET_ERUA;
+  let gatacaUser = process.env.GATACA_APP_TICKET;
+  let gatacaPass = process.env.GATACA_PASS_TICKET;
   let sessionTokenName = "gataca_jwt_ticket_erua";
-  return pollResult(gatacaSessionId, gatacaUser, gatacaPass, sessionTokenName);
+  return pollResultOIDC(
+    gatacaSessionId,
+    gatacaUser,
+    gatacaPass,
+    sessionTokenName
+  );
 };
 
 const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
   let credentialData;
   let basicAuthStr;
+  let cacheVariable;
   if (issueTemplate === "eruaID") {
     basicAuthStr = basicAuthToken(
       process.env.GATACA_APP_ACADEMIC_ID,
       process.env.GATACA_PASS_ACADEMIC_ID
     );
+    cacheVariable = "gataca_jwt";
     credentialData = [
       {
         credentialSubject: {
@@ -98,7 +149,7 @@ const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
       process.env.GATACA_APP_TICKET,
       process.env.GATACA_PASS_TICKET
     );
-
+    cacheVariable = "gataca_jwt";
     credentialData = [
       {
         credentialSubject: {
@@ -119,6 +170,56 @@ const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
       },
     ];
   }
+  if (issueTemplate === "Student_ID") {
+    basicAuthStr = basicAuthToken(
+      process.env.GATACA_APP_STUDENT_ID,
+      process.env.GATACA_PASS_STUDENT_ID
+    );
+    cacheVariable = "gataca_jwt_student";
+    credentialData = [
+      {
+        credentialSubject: {
+          // id: userData.eduPersonUniqueId ? userData.eduPersonUniqueId : "",
+          identifier: [
+            //TODO fix if this identifier is missing
+            {
+              schemeID: "European Student Identifier",
+              value: userData.emailAddress, //"urn:schac:personalUniqueCode:int:esi:math.example.edu:xxxxxxxxxx",
+              id: "urn:schac:personalUniqueCode:int:esi:math.example.edu:xxxxxxxxxx", //userData.eduPersonUniqueId ? userData.eduPersonUniqueId : userData.emailAddress,
+            },
+          ],
+          personalIdentifier: userData.emailAddress
+            ? userData.emailAddress
+            : userData.email,
+          firstName: userData.name ? userData.name : userData.givenName,
+          familyName: userData.surname ? userData.surname : userData.familyName,
+        },
+        type: ["VerifiableCredential", "studentIdCredential"],
+      },
+    ];
+  }
+
+  if (issueTemplate === "Alliance_ID") {
+    // console.log(userData)
+    basicAuthStr = basicAuthToken(
+      process.env.GATACA_APP_STUDENT_ID,
+      process.env.GATACA_PASS_STUDENT_ID
+    );
+    cacheVariable = "gataca_jwt_student";
+    credentialData = [
+      {
+        credentialSubject: {
+          identifier: {
+            schemeID: "European Student Identifier",
+            value:
+              "urn:schac:europeanUniversityAllianceCode:int:euai:ERUA:"+userData.schacHomeOrganization,
+            id: "urn:schac:europeanUniversityAllianceCode:int:euai:ERUA:"+userData.schacHomeOrganization,
+          },
+        },
+        type: ["VerifiableCredential", "allianceIDCredential"],
+      },
+    ];
+  }
 
   return new Promise(async (res, rej) => {
     let options = {
@@ -128,10 +229,15 @@ const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
         Authorization: `Basic ${basicAuthStr}`,
       },
     };
-    let gatacaAuthToken = await getSessionData("gataca_jwt", "gataca_jwt");
+    let gatacaAuthToken = await getSessionData("gataca_jwt", cacheVariable);
     if (!gatacaAuthToken || isJwtTokenExpired.default(gatacaAuthToken)) {
       const gatacaTokenResponse = await axios.request(options);
       gatacaAuthToken = gatacaTokenResponse.headers.token;
+      await setOrUpdateSessionData(
+        "gataca_jwt",
+        cacheVariable,
+        gatacaAuthToken
+      );
     }
 
     options = {
@@ -158,8 +264,11 @@ const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
 
 export {
   makeGatacaVerificationRequest,
-  pollForVerificationResult,
+  // pollForVerificationResult,
   issueCredential,
-  pollForTicketVerificationResult,
+  // pollForTicketVerificationResult,
   makeGatacaVerificationRequestTicket,
+  pollForTicketVerificationResultOIDC,
+  pollForVerificationResultOIDC,
+  makeGatacaVerificationRequestStdAndAlliance
 };

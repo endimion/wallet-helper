@@ -11,14 +11,15 @@ let constants = consts.consts;
 function basicAuthToken(gatacaUser, gatacaPass) {
   let basicAuthString = gatacaUser + ":" + gatacaPass;
   let buff = new Buffer(basicAuthString);
-  return  buff.toString("base64");
+  return buff.toString("base64");
 }
 
-async function pollResult(
+async function pollResultCore(
   gatacaSessionId,
   gatacaUser,
   gatacaPass,
-  sessionTokenName
+  sessionTokenName,
+  checkVerificationSessionURL
 ) {
   return new Promise((resolve, rej) => {
     let pollingIntervalId = setInterval(async () => {
@@ -26,7 +27,7 @@ async function pollResult(
         method: "POST",
         url: constants.GATACA_CERTIFY_URL,
         headers: {
-          Authorization: `Basic ${basicAuthToken(gatacaUser,gatacaPass)}`,
+          Authorization: `Basic ${basicAuthToken(gatacaUser, gatacaPass)}`,
         },
       };
       let gatacaAuthToken = await getSessionData(
@@ -45,7 +46,7 @@ async function pollResult(
         } catch (error) {
           console.log("GATACA BASIC AUTH ERROR");
           if (error.response && error.response.data)
-            console.log(error.response).data;
+            console.log(error.response.data);
           clearInterval(pollingIntervalId);
           rej(error);
         }
@@ -53,7 +54,7 @@ async function pollResult(
 
       options = {
         method: "GET",
-        url: `${constants.GATACA_CHECK_VERIFICATION_STATUS_URL}/${gatacaSessionId}`,
+        url: `${checkVerificationSessionURL}/${gatacaSessionId}`,
         headers: {
           Authorization: `jwt ${gatacaAuthToken}`,
           "Content-Type": "application/json",
@@ -67,8 +68,12 @@ async function pollResult(
             `utils.js pollResult:: check verification status result for session ${gatacaSessionId}`
           );
           if (response.status === 200 && response.data) {
+            // console.log("VP response!!!");
             // console.log(response.data);
-            let credentialsPresented = response.data.data.verifiableCredential; // this is an array
+
+            let credentialsPresented =
+              response.data.PresentationSubmission.verifiableCredential; //response.data.data.verifiableCredential; // this is an array
+            // console.log(credentialsPresented);
             let allAttributesOfUser = {};
             credentialsPresented.forEach((cred) => {
               for (var name in cred.credentialSubject) {
@@ -81,7 +86,8 @@ async function pollResult(
             clearInterval(pollingIntervalId);
             resolve(allAttributesOfUser);
           } else {
-            if (response.status === 204) console.log("no ready");
+            if (response.status === 204 || response.status === 202)
+              console.log("no ready");
             else {
               clearInterval(pollingIntervalId);
               rej("errror2");
@@ -91,7 +97,7 @@ async function pollResult(
         .catch(function (error) {
           console.log("ERROR2");
           if (error.response && error.response.data)
-            console.log(error.response).data;
+            console.log(error.response.data);
           clearInterval(pollingIntervalId);
           rej(error);
         });
@@ -106,6 +112,21 @@ async function pollResult(
   });
 }
 
+async function pollResult(
+  gatacaSessionId,
+  gatacaUser,
+  gatacaPass,
+  sessionTokenName
+) {
+  return pollResultCore(
+    gatacaSessionId,
+    gatacaUser,
+    gatacaPass,
+    sessionTokenName,
+    constants.GATACA_CHECK_VERIFICATION_STATUS_URL
+  );
+}
+
 async function verificationRequest(
   verificationTemplate,
   gatacaUser,
@@ -117,7 +138,7 @@ async function verificationRequest(
       method: "POST",
       url: constants.GATACA_CERTIFY_URL,
       headers: {
-        Authorization: `Basic ${basicAuthToken(gatacaUser,gatacaPass)}`,
+        Authorization: `Basic ${basicAuthToken(gatacaUser, gatacaPass)}`,
       },
     };
 
@@ -190,4 +211,102 @@ async function verificationRequest(
   });
 }
 
-export { pollResult, verificationRequest, basicAuthToken };
+async function verificationRequestOIDC(
+  verificationTemplate,
+  gatacaUser,
+  gatacaPass,
+  sessionTokenName
+) {
+  console.log("verificationRequestOIDC");
+  console.log(gatacaPass + " " + gatacaUser + " " + sessionTokenName);
+
+  return new Promise(async (res, rej) => {
+    let options = {
+      method: "POST",
+      url: constants.GATACA_CERTIFY_URL,
+      headers: {
+        Authorization: `Basic ${basicAuthToken(gatacaUser, gatacaPass)}`,
+      },
+    };
+
+    try {
+      // by setting the sessionId to "gataca_jwt" same as the variable this becomes a globaly accessible cached value
+      // so all calls will use the same token until its expired
+      let gatacaAuthToken = await getSessionData(
+        sessionTokenName,
+        "gataca_jwt"
+      );
+      if (!gatacaAuthToken || isJwtTokenExpired.default(gatacaAuthToken)) {
+        const gatacaTokenResponse = await axios.request(options);
+        gatacaAuthToken = gatacaTokenResponse.headers.token;
+        setOrUpdateSessionData(sessionTokenName, "gataca_jwt", gatacaAuthToken);
+      }
+
+      // request verification
+      options = {
+        method: "POST",
+        url: constants.GATACA_CREATE_OIDC_VERIFICATION_SESSION_URL,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `jwt ${gatacaAuthToken}`,
+        },
+        data: { ssiConfigId: verificationTemplate },
+      };
+      axios
+        .request(options)
+        .then(async function (response) {
+          if (!response.data) rej("no data returned!");
+          response = response.data;
+          if (!response.presentation_definition) rej("no session returned!");
+          // console.log(response.presentation_definition);
+          let verificationSessionId = response.presentation_definition.id;
+          console.log("OIDC VERIFICATION SESSION IS:" + verificationSessionId);
+          if (!response.authentication_request)
+            rej("no oidc auth string returned");
+          let qrData = response.authentication_request;
+          let code = qr.image(qrData, {
+            type: "png",
+            ec_level: "H",
+            size: 10,
+            margin: 10,
+          });
+          let mediaType = "PNG";
+          let encodedQR = imageDataURI.encode(
+            await streamToBuffer(code),
+            mediaType
+          );
+          res({ qr: encodedQR, gatacaSession: verificationSessionId });
+        })
+        .catch(function (error) {
+          console.error(error);
+          rej({ error: error });
+        });
+    } catch (error) {
+      console.error(error);
+      rej({ error: error });
+    }
+  });
+}
+
+async function pollResultOIDC(
+  gatacaSessionId,
+  gatacaUser,
+  gatacaPass,
+  sessionTokenName
+) {
+  return pollResultCore(
+    gatacaSessionId,
+    gatacaUser,
+    gatacaPass,
+    sessionTokenName,
+    constants.GATACA_CHECK_VERIFICATION_STATUS_OIDC_URL
+  );
+}
+
+export {
+  pollResult,
+  verificationRequest,
+  basicAuthToken,
+  verificationRequestOIDC,
+  pollResultOIDC,
+};
