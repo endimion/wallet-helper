@@ -112,6 +112,91 @@ async function pollResultCore(
   });
 }
 
+//TODO Refactor this with the rest of the polling functions
+// there is repetition here....
+async function checkVerificationStatus(
+  gatacaSessionId,
+  gatacaUser,
+  gatacaPass,
+  sessionTokenName,
+  checkVerificationSessionURL
+) {
+  return new Promise(async (resolve, rej) => {
+    let options = {
+      method: "POST",
+      url: constants.GATACA_CERTIFY_URL,
+      headers: {
+        Authorization: `Basic ${basicAuthToken(gatacaUser, gatacaPass)}`,
+      },
+    };
+    let gatacaAuthToken = await getSessionData(sessionTokenName, "gataca_jwt");
+    if (!gatacaAuthToken || isJwtTokenExpired.default(gatacaAuthToken)) {
+      try {
+        const gatacaTokenResponse = await axios.request(options);
+        gatacaAuthToken = gatacaTokenResponse.headers.token;
+        setOrUpdateSessionData(sessionTokenName, "gataca_jwt", gatacaAuthToken);
+      } catch (error) {
+        console.log("GATACA BASIC AUTH ERROR");
+        if (error.response && error.response.data)
+          console.log(error.response.data);
+
+        rej(error);
+      }
+    }
+
+    options = {
+      method: "GET",
+      url: `${checkVerificationSessionURL}/${gatacaSessionId}`,
+      headers: {
+        Authorization: `jwt ${gatacaAuthToken}`,
+        "Content-Type": "application/json",
+      },
+    };
+
+    axios
+      .request(options)
+      .then(function (response) {
+        console.log(
+          `utils.js pollResult:: check verification status result for session ${gatacaSessionId}`
+        );
+        if (response.status === 200 && response.data) {
+          let credentialsPresented =
+            response.data.PresentationSubmission.verifiableCredential; //response.data.data.verifiableCredential; // this is an array
+          // console.log(credentialsPresented);
+          let allAttributesOfUser = {};
+          credentialsPresented.forEach((cred) => {
+            for (var name in cred.credentialSubject) {
+              // console.log(name + "=" + valuesJSON[name]);
+              if (name !== "id") {
+                allAttributesOfUser[name] = cred.credentialSubject[name];
+              }
+            }
+          });
+          resolve({ status: 200, attributes: allAttributesOfUser });
+        } else {
+          if (response.status === 204 || response.status === 202) {
+            console.log("no ready");
+            resolve({ status: 202 });
+          } else {
+            rej({
+              status: 500,
+              message:
+                "verificaiton response not 204 or 202 or 200, instead " +
+                response.status,
+            });
+          }
+        }
+      })
+      .catch(function (error) {
+        console.log("ERROR2");
+        if (error.response && error.response.data) {
+          rej({ status: 500, message: error.response.data });
+        }
+        rej({ status: 500, message: error });
+      });
+  });
+}
+
 async function pollResult(
   gatacaSessionId,
   gatacaUser,
@@ -309,4 +394,5 @@ export {
   basicAuthToken,
   verificationRequestOIDC,
   pollResultOIDC,
+  checkVerificationStatus,
 };

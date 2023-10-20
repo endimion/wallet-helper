@@ -3,7 +3,10 @@ import {
   makeGatacaVerificationRequestStdAndAlliance,
 } from "../gatacaService.js";
 import { getSessionData, setOrUpdateSessionData } from "../redisService.js";
+import { checkVerificationStatus } from "../utils.js";
 
+import consts from "../constants.js";
+let constants = consts.consts;
 
 export async function credentialRequest(req, res, next) {
   console.log("controllers/itb.js /credentialRequest");
@@ -46,5 +49,56 @@ export async function credentialRequest(req, res, next) {
       err.error.response.data.message
     )
       res.status(500).send({ error: err.error.response.data.message });
+  }
+}
+
+export async function getValidationResponse(req, res, next) {
+  console.log("itb.js getValidationResponse");
+  let gatacaUser = process.env.GATACA_APP_STD_ALL;
+  let gatacaPass = process.env.GATACA_PASS_STD_ALL;
+  let sessionTokenName = "gataca_jwt_std_all";
+  let itbSession = req.query.sessionId;
+  let gatacaSessionId = await getSessionData(
+    req.query.sessionId,
+    "itb-gataca-session"
+  );
+  if (gatacaSessionId) {
+    try {
+      let response = await checkVerificationStatus(
+        gatacaSessionId,
+        gatacaUser,
+        gatacaPass,
+        sessionTokenName,
+        constants.GATACA_CHECK_VERIFICATION_STATUS_OIDC_URL
+      );
+
+      if (response.status === 200) {
+        res.status(200).send({
+          status: "success",
+          reason: "ok",
+          sessionId: req.query.sessionId,
+          attributes: response.attributes,
+        });
+      }
+      if (response.status === 202) {
+        res.status(200).send({
+          status: "pending",
+          reason: "ok",
+          sessionId: req.query.sessionId,
+        });
+      }
+    } catch (error) {
+      res.status(403).send({
+        status: "fail",
+        reason: error.message,
+        sessionId: req.query.sessionId,
+      });
+    }
+  } else {
+    res.status(500).send({
+      status: "fail",
+      reason: "no verification session found",
+      sessionId: req.query.sessionId,
+    });
   }
 }

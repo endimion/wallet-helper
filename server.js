@@ -18,6 +18,7 @@ import {
 } from "./gatacaService.js";
 import { getSessionData, setOrUpdateSessionData } from "./redisService.js";
 import  {itbRouter}  from "./routes/itbRoutes.js"
+import {gatacaRouter} from "./routes/gatacaRoutes.js"
 dotenv.config();
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
@@ -36,13 +37,6 @@ const openApiOptions = {
 };
 const specs = swaggerJsdoc(openApiOptions);
 
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json({ type: "*/*" }));
-/* ***************      */
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
-app.use('/itb', itbRouter); //to use the routes
-
-
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -52,6 +46,22 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+
+
+
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json({ type: "*/*" }));
+/* ***************      */
+app.use(['/api-docs', "/gataca-helper/api-docs"], swaggerUi.serve, swaggerUi.setup(specs));
+app.use( ['/itb', "/gataca-helper/itb" ], itbRouter); //to use the routes
+app.use("/", (req, res, next) => {
+  // Attach your object to the req object
+  req.io = io;
+  next(); // Move to the next middleware or route
+},gatacaRouter )
+
+ 
+
 
 let isJwtTokenExpired = checkJWT.default;
 // console.log(checkJWT.default)
@@ -135,176 +145,12 @@ const removeActiveSession = (activeSessions, sessionObj) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.post(
-  [
-    "/makeGatacaVerificationRequest",
-    `\/${constants.BASE_PATH}/makeGatacaVerificationRequest`,
-    "/gataca-helper/makeGatacaVerificationRequest",
-  ],
-  async (req, res) => {
-    console.log("server.js /makeGatacaVerificationRequest");
-    let gataCataVerificationRequest = await makeGatacaVerificationRequest(
-      req.body.verificationTemplate
-    );
-    let qrCode = gataCataVerificationRequest.qr;
-    let gatacaSession = gataCataVerificationRequest.gatacaSession;
-    let clientWebSocketId = req.body.socketSessionId;
-    let clientKeycloakVerificationSession = req.body.verificationSession;
-    // start polling for verification data
-    pollForVerificationResultOIDC(gatacaSession)
-      .then((result) => {
-        // console.log(
-        //   "server.js: qr code sent to front end a while back, but now i also got the user attributes!"
-        // );
-        console.log("server.js user authenticated");
-        // console.log(result);
-        // once data is received send notification to the webSocketSesssionId that the verification is completed
-        io.to(clientWebSocketId).emit("message", {
-          sessionId: clientKeycloakVerificationSession,
-          status: "READY",
-          message: "user authenticated",
-        });
-        // store user data in redis under the keycloak verification session
-        setOrUpdateSessionData(
-          clientKeycloakVerificationSession,
-          "userData",
-          result
-        );
-      })
-      .catch((err) => {
-        console.log(err);
-      });
-    res.send({ qrCode });
-  }
-);
+ 
 
-app.post(
-  [
-    "/makeGatacaVerificationRequestTicket",
-    `\/${constants.BASE_PATH}/makeGatacaVerificationRequestTicket`,
-    "/gataca-helper/makeGatacaVerificationRequestTicket",
-  ],
-  async (req, res) => {
-    console.log("server.js /makeGatacaVerificationRequestTicket");
-    let gataCataVerificationRequest = await makeGatacaVerificationRequestTicket(
-      "TICKET_VERIFIER_ERUA" //"TICKET_Verification"
-    );
-    let qrCode = gataCataVerificationRequest.qr;
-    let gatacaSession = gataCataVerificationRequest.gatacaSession;
-    let clientWebSocketId = req.body.socketSessionId;
-    let clientKeycloakVerificationSession = req.body.verificationSession;
 
-    res.send({ qrCode });
 
-    // start polling for verification data
-    try {
-      let result = await pollForTicketVerificationResultOIDC(gatacaSession);
-      console.log("server.js user authenticated");
-      // console.log(result);
-      // once data is received send notification to the webSocketSesssionId that the verification is completed
-      io.to(clientWebSocketId).emit("message", {
-        sessionId: clientKeycloakVerificationSession,
-        status: "READY",
-        message: "user authenticated",
-      });
-      // store user data in redis under the keycloak verification session
-      setOrUpdateSessionData(
-        clientKeycloakVerificationSession,
-        "userData",
-        result
-      );
-    } catch (err) {
-      console.log("session " + gatacaSession + " err:");
-      console.log(err);
-    }
-  }
-);
 
-//https://dss.aegean.gr/gataca-helper/makeGatacaVerificationRequestStdAndAlliance
-app.post(
-  [
-    "/makeGatacaVerificationRequestStdAndAlliance",
-    `\/${constants.BASE_PATH}/makeGatacaVerificationRequestStdAndAlliance`,
-    "/gataca-helper/makeGatacaVerificationRequestStdAndAlliance",
-  ],
-  async (req, res) => {
-    console.log("server.js /makeGatacaVerificationRequestStdAndAlliance");
-    let gataCataVerificationRequest =
-      await makeGatacaVerificationRequestStdAndAlliance(
-        "STUDENT_AND_ALLIANCE_ID" //"TICKET_Verification"
-      );
-    let qrCode = gataCataVerificationRequest.qr;
-    let gatacaSession = gataCataVerificationRequest.gatacaSession;
-    let clientWebSocketId = req.body.socketSessionId;
-    let clientKeycloakVerificationSession = req.body.verificationSession;
 
-    res.send({ qrCode });
-
-    // start polling for verification data
-    try {
-      let result = await pollForTicketVerificationResultOIDC(gatacaSession);
-      console.log("server.js user authenticated");
-      console.log(result);
-      // once data is received send notification to the webSocketSesssionId that the verification is completed
-      io.to(clientWebSocketId).emit("message", {
-        sessionId: clientKeycloakVerificationSession,
-        status: "READY",
-        message: "user authenticated",
-      });
-      // store user data in redis under the keycloak verification session
-      setOrUpdateSessionData(
-        clientKeycloakVerificationSession,
-        "userData",
-        result
-      );
-    } catch (err) {
-      console.log("session " + gatacaSession + " err:");
-      console.log(err);
-    }
-  }
-);
-
-// add a different end-point via which the client queries for the user data with the keycloak verificaiton session
-app.get(
-  [
-    "/getUserDetails",
-    `\/${constants.BASE_PATH}/getUserDetails`,
-    "/gataca-helper/getUserDetails",
-  ],
-  async (req, res) => {
-    let clientKeycloakVerificationSession = req.query.sessionId;
-    let result = await getSessionData(
-      clientKeycloakVerificationSession,
-      "userData"
-    );
-    res.send(result);
-  }
-);
-
-// issue a credential
-app.post(
-  [
-    "/issue",
-    `\/${constants.BASE_PATH}/issue`,
-    "/socket.io/issue",
-    "/gataca-helper/issue",
-  ],
-  async (req, res) => {
-    let gatacaSession = req.body.gatacaSession;
-    let userData = req.body.userData;
-    let issueTemplate = req.body.issueTemplate;
-    try {
-      let result = await issueCredential(
-        gatacaSession,
-        userData,
-        issueTemplate
-      );
-      res.send(result);
-    } catch (err) {
-      res.send(err);
-    }
-  }
-);
 
 
 
