@@ -8,32 +8,23 @@ import dotenv from "dotenv";
 import checkJWT from "jwt-check-expiry";
 let constants = consts.consts;
 import bodyParser from "body-parser";
-import {
-  issueCredential,
-  makeGatacaVerificationRequest,
-  pollForTicketVerificationResultOIDC,
-  pollForVerificationResultOIDC,
-  makeGatacaVerificationRequestTicket,
-  makeGatacaVerificationRequestStdAndAlliance,
-} from "./gatacaService.js";
 import { getSessionData, setOrUpdateSessionData } from "./redisService.js";
-import  {itbRouter}  from "./routes/itbRoutes.js"
-import {gatacaRouter} from "./routes/gatacaRoutes.js"
+import { itbRouter } from "./routes/itbRoutes.js";
+import { gatacaRouter } from "./routes/gatacaRoutes.js";
 dotenv.config();
-import swaggerJsdoc from 'swagger-jsdoc';
-import swaggerUi from 'swagger-ui-express';
-
+import swaggerJsdoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
 
 const app = express();
 const openApiOptions = {
   definition: {
-    openapi: '3.0.0',
+    openapi: "3.0.0",
     info: {
-      title: 'ITB open api',
-      version: '1.0.0',
+      title: "ITB open api",
+      version: "1.0.0",
     },
   },
-  apis: ['./routes/itbRoutes.js'],
+  apis: ["./routes/itbRoutes.js"],
 };
 const specs = swaggerJsdoc(openApiOptions);
 
@@ -47,42 +38,72 @@ const io = new Server(server, {
   },
 });
 
-
-
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json({ type: "*/*" }));
-/* ***************      */
-app.use(['/api-docs', "/gataca-helper/api-docs"], swaggerUi.serve, swaggerUi.setup(specs));
-app.use( ['/itb', "/gataca-helper/itb" ], itbRouter); //to use the routes
-app.use("/", (req, res, next) => {
-  // Attach your object to the req object
-  req.io = io;
-  next(); // Move to the next middleware or route
-},gatacaRouter )
-
- 
-
+let activeSessionsAcademicID = [];
+let activeTicketSessions = [];
+let activeStudentIDSessions = [];
+let socketConnections = [];
+let gatacaAuthToken = null;
+let gatacaAuthTokenTicket = null;
+let gatacaAuthStudent = null;
+let pendingVerificationSessions = [];
 
 let isJwtTokenExpired = checkJWT.default;
 // console.log(checkJWT.default)
 
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json({ type: "*/*" }));
+/* ***************      */
+app.use(
+  ["/api-docs", "/gataca-helper/api-docs"],
+  swaggerUi.serve,
+  swaggerUi.setup(specs)
+);
+app.use(["/itb", "/gataca-helper/itb"], itbRouter); //to use the routes
+app.use(
+  "/",
+  (req, res, next) => {
+    // Attach your object to the req object
+    req.io = io;
+    req.pendingVerificationSessions = pendingVerificationSessions;
+    next(); // Move to the next middleware or route
+  },
+  gatacaRouter
+);
 app.use(cors()); // Enable CORS for all routes
-let activeSessionsAcademicID = [];
-let activeTicketSessions = [];
-let activeStudentIDSessions = [];
-let gatacaAuthToken = null;
-let gatacaAuthTokenTicket = null;
-let gatacaAuthStudent = null;
 
 io.on("connection", (socket) => {
-  console.log("A user connected");
-
+  console.log("******A user connected:::" + socket.id);
+  //add to sockets array
+  socketConnections.push(socket.id);
   // socket.on;
+
+  //this gets called ones a verification session is completed.
+  // and removes the sesssion from the pending sessions of the server
+  socket.on("clientResponse", (data) => {
+    console.log("clientResponse");
+    /*
+    {
+      sessionId: '09b9f636-2501-487d-8f42-6ad4ca8c3338',
+      status: 'completed',
+      type: 'verificationStatus'
+    }
+    */
+    console.log("client response  received for session-"+data.sessionId);
+    console.log(data);
+    pendingVerificationSessions = removeFromArray(
+      pendingVerificationSessions,
+      data.sessionId
+    );
+    console.log("New pendidng sessions for verification are:")
+    console.log(pendingVerificationSessions)
+    if (!pendingVerificationSessions) pendingVerificationSessions = [];
+  });
 
   // Listen for incoming messages
   // TODO when a client opens a session this way is it only an issuance session??
   socket.on("message", (message) => {
     console.log("Received message:", message);
+
     if (message.type === constants.WS_INIT_SESSION) {
       console.log(`client started a session with Id ${message.id}`);
       if (
@@ -126,11 +147,17 @@ io.on("connection", (socket) => {
 
   // Handle disconnection
   socket.on("disconnect", () => {
-    console.log("A user disconnected");
+    console.log("******A user disconnected:: " + +socket.id);
+    // console.log(socket)
+    socketConnections = removeFromArray(socketConnections, socket.id);
+  });
+
+  socket.on("reconnect", () => {
+    console.log(`******Client reconnected: ${socket.id}`);
   });
 });
 
-const removeActiveSession = (activeSessions, sessionObj) => {
+const removeFromArray = (activeSessions, sessionObj) => {
   if (!activeSessions) return [];
   // console.log(`will remove ${sessionObj}`)
   const index = activeSessions.indexOf(sessionObj);
@@ -144,18 +171,6 @@ const removeActiveSession = (activeSessions, sessionObj) => {
 };
 
 const PORT = process.env.PORT || 5000;
-
- 
-
-
-
-
-
-
-
-
-
-
 
 function isGatacaSessionExpired(sessionObject) {
   // Calculate the current time
@@ -185,6 +200,22 @@ server.listen(PORT, () => {
       //TRY with STUDENT_ID
       activeStudentIDSessions.forEach(async (sessionObj) => {
         if (!isGatacaSessionExpired(sessionObj)) {
+          let gatacaSessionId = sessionObj.sessionId;
+          let gatacaUser = process.env.GATACA_APP_STUDENT_ID;
+          let gatacaPass = process.env.GATACA_PASS_STUDENT_ID;
+          let sessionTokenName = "student_id_token";
+
+          checkVerificationStatus(
+            gatacaSessionId,
+            gatacaUser,
+            gatacaPass,
+            sessionTokenName,
+            checkVerificationSessionURL
+          );
+          // TODO hnadl ok
+          // TODO handle pending
+          // TODO handle errors
+
           try {
             let basicAuthStringStudent =
               process.env.GATACA_APP_STUDENT_ID +
@@ -218,7 +249,7 @@ server.listen(PORT, () => {
               .request(options)
               .then(function (response) {
                 if (response.data.status === "READY") {
-                  activeStudentIDSessions = removeActiveSession(
+                  activeStudentIDSessions = removeFromArray(
                     activeStudentIDSessions,
                     sessionObj
                   );
@@ -245,7 +276,7 @@ server.listen(PORT, () => {
                       sessionObj.sessionId
                   );
                   if (activeStudentIDSessions) {
-                    activeStudentIDSessions = removeActiveSession(
+                    activeStudentIDSessions = removeFromArray(
                       activeStudentIDSessions,
                       sessionObj
                     );
@@ -257,7 +288,7 @@ server.listen(PORT, () => {
           } catch (err) {
             console.log(err.response ? err.response : err);
             console.log("ERRIR2");
-            activeStudentIDSessions = removeActiveSession(
+            activeStudentIDSessions = removeFromArray(
               activeStudentIDSessions,
               sessionObj
             );
@@ -265,7 +296,7 @@ server.listen(PORT, () => {
             console.log(activeTicketSessions);
           }
         } else {
-          activeStudentIDSessions = removeActiveSession(
+          activeStudentIDSessions = removeFromArray(
             activeStudentIDSessions,
             sessionObj
           );
@@ -314,7 +345,7 @@ server.listen(PORT, () => {
               .request(options)
               .then(function (response) {
                 if (response.data.status === "READY") {
-                  activeTicketSessions = removeActiveSession(
+                  activeTicketSessions = removeFromArray(
                     activeTicketSessions,
                     sessionObj
                   );
@@ -341,7 +372,7 @@ server.listen(PORT, () => {
                       sessionObj.sessionId
                   );
                   if (activeTicketSessions) {
-                    activeTicketSessions = removeActiveSession(
+                    activeTicketSessions = removeFromArray(
                       activeTicketSessions,
                       sessionObj
                     );
@@ -354,7 +385,7 @@ server.listen(PORT, () => {
             // console.log(err)
             console.log(err.response ? err.response : err);
             console.log("ERRIR");
-            activeTicketSessions = removeActiveSession(
+            activeTicketSessions = removeFromArray(
               activeTicketSessions,
               sessionObj
             );
@@ -362,7 +393,7 @@ server.listen(PORT, () => {
             console.log(activeTicketSessions);
           }
         } else {
-          activeTicketSessions = removeActiveSession(
+          activeTicketSessions = removeFromArray(
             activeTicketSessions,
             sessionObj
           );
@@ -410,7 +441,7 @@ server.listen(PORT, () => {
               );
               console.log(response.data.status);
               if (response.data.status === "READY") {
-                activeSessionsAcademicID = removeActiveSession(
+                activeSessionsAcademicID = removeFromArray(
                   activeSessionsAcademicID,
                   sessionObj
                 );
@@ -433,7 +464,7 @@ server.listen(PORT, () => {
                   "got 404 will remove session " + sessionObj.sessionId
                 );
                 if (activeSessionsAcademicID) {
-                  activeSessionsAcademicID = removeActiveSession(
+                  activeSessionsAcademicID = removeFromArray(
                     activeSessionsAcademicID,
                     sessionObj
                   );
@@ -442,7 +473,7 @@ server.listen(PORT, () => {
               }
             });
         } else {
-          activeSessionsAcademicID = removeActiveSession(
+          activeSessionsAcademicID = removeFromArray(
             activeSessionsAcademicID,
             sessionObj
           );

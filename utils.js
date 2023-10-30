@@ -360,7 +360,11 @@ async function verificationRequestOIDC(
             await streamToBuffer(code),
             mediaType
           );
-          res({ qr: encodedQR, gatacaSession: verificationSessionId });
+          res({
+            qr: encodedQR,
+            deepLink: response.authentication_request,
+            gatacaSession: verificationSessionId,
+          });
         })
         .catch(function (error) {
           console.error(error);
