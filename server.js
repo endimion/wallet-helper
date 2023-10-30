@@ -11,6 +11,7 @@ import bodyParser from "body-parser";
 import { getSessionData, setOrUpdateSessionData } from "./redisService.js";
 import { itbRouter } from "./routes/itbRoutes.js";
 import { gatacaRouter } from "./routes/gatacaRoutes.js";
+import { checkVerificationStatus } from "./utils.js";
 dotenv.config();
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
@@ -205,13 +206,14 @@ server.listen(PORT, () => {
           let gatacaPass = process.env.GATACA_PASS_STUDENT_ID;
           let sessionTokenName = "student_id_token";
 
-          checkVerificationStatus(
-            gatacaSessionId,
-            gatacaUser,
-            gatacaPass,
-            sessionTokenName,
-            checkVerificationSessionURL
-          );
+           //TODO refactor these "try" into functions using the following??
+          // checkVerificationStatus(
+          //   gatacaSessionId,
+          //   gatacaUser,
+          //   gatacaPass,
+          //   sessionTokenName,
+          //   constants.GATACA_CHECK_VERIFICATION_STATUS_URL
+          // );
           // TODO hnadl ok
           // TODO handle pending
           // TODO handle errors
