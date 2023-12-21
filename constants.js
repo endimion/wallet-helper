@@ -6,12 +6,13 @@ export default {
     WS_INIT_SESSION: "start-session",
     CORS_URI: process.env.CORS_URI
       ? process.env.CORS_URI
-      :  "http://localhost:5030,http://localhost,http://localhost:8081",
+      :  "http://localhost:5030,http://localhost,http://localhost:8081,http://localhost:3000",
     REDIS: process.env.REDIS ? process.env.REDIS : "localhost",
     GATACA_CREATE_VERIFICATION_SESSION_URL: "https://connect.gataca.io/api/v1/sessions",
     GATACA_CREATE_OIDC_VERIFICATION_SESSION_URL: "https://connect.gataca.io/api/v2/sessions",
     GATACA_CHECK_VERIFICATION_STATUS_URL: "https://connect.gataca.io/api/v1/sessions",
     GATACA_CHECK_VERIFICATION_STATUS_OIDC_URL: "https://connect.gataca.io/api/v2/sessions",
+    GATACA_CHECK_ISSUANCE_STATUS_URL: "https://certify.gataca.io/admin/v1/issuanceRequests",
     BASE_PATH:process.env.BASE_PATH ? process.env.BASE_PATH : ""
   },
 };

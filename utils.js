@@ -112,6 +112,14 @@ async function pollResultCore(
   });
 }
 
+
+
+
+
+
+
+
+
 //TODO Refactor this with the rest of the polling functions
 // there is repetition here....
 async function checkVerificationStatus(
@@ -211,6 +219,10 @@ async function pollResult(
     constants.GATACA_CHECK_VERIFICATION_STATUS_URL
   );
 }
+
+
+
+
 
 async function verificationRequest(
   verificationTemplate,

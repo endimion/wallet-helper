@@ -42,10 +42,12 @@ const io = new Server(server, {
 let activeSessionsAcademicID = [];
 let activeTicketSessions = [];
 let activeStudentIDSessions = [];
+let activeBoardingPassSession = [];
 let socketConnections = [];
 let gatacaAuthToken = null;
 let gatacaAuthTokenTicket = null;
 let gatacaAuthStudent = null;
+let gatacaAuthTokenBoardingPass = null 
 let pendingVerificationSessions = [];
 
 let isJwtTokenExpired = checkJWT.default;
@@ -89,14 +91,14 @@ io.on("connection", (socket) => {
       type: 'verificationStatus'
     }
     */
-    console.log("client response  received for session-"+data.sessionId);
+    console.log("client response  received for session-" + data.sessionId);
     console.log(data);
     pendingVerificationSessions = removeFromArray(
       pendingVerificationSessions,
       data.sessionId
     );
-    console.log("New pendidng sessions for verification are:")
-    console.log(pendingVerificationSessions)
+    console.log("New pendidng sessions for verification are:");
+    console.log(pendingVerificationSessions);
     if (!pendingVerificationSessions) pendingVerificationSessions = [];
   });
 
@@ -107,6 +109,18 @@ io.on("connection", (socket) => {
 
     if (message.type === constants.WS_INIT_SESSION) {
       console.log(`client started a session with Id ${message.id}`);
+     
+      if (message.credential === "Boarding_Pass") {
+        if(!activeBoardingPassSession) activeBoardingPassSession = []
+        activeBoardingPassSession.push({
+          sessionId: message.id,
+          timestamp: Date.now(),
+          socketId: message.socketID,
+        });
+        // console.log(`111pushing to boardingPAss the session ${message.id}`)
+        // console.log(activeBoardingPassSession)
+      }
+
       if (
         message.credential === "Student_ID" ||
         message.credential === "Alliance_ID"
@@ -206,7 +220,7 @@ server.listen(PORT, () => {
           let gatacaPass = process.env.GATACA_PASS_STUDENT_ID;
           let sessionTokenName = "student_id_token";
 
-           //TODO refactor these "try" into functions using the following??
+          //TODO refactor these "try" into functions using the following??
           // checkVerificationStatus(
           //   gatacaSessionId,
           //   gatacaUser,
@@ -346,6 +360,7 @@ server.listen(PORT, () => {
             axios
               .request(options)
               .then(function (response) {
+                console.log(`status ${response.data.status} for ${sessionObj.sessionId}`)
                 if (response.data.status === "READY") {
                   activeTicketSessions = removeFromArray(
                     activeTicketSessions,
@@ -457,7 +472,7 @@ server.listen(PORT, () => {
             })
             .catch(async function (error) {
               // console.log(error.response);
-              console.log("Error getting " + sessionObj.sessionId);
+              console.log("Error getting academicIDSession" + sessionObj.sessionId);
               if (
                 error.response &&
                 (error.response.status === 404 || error.response.status === 403)
@@ -482,5 +497,87 @@ server.listen(PORT, () => {
         }
       });
     }
+
+
+    if (activeBoardingPassSession && activeBoardingPassSession.length > 0) {
+      activeBoardingPassSession.forEach(async (sessionObj) => {
+        if (!isGatacaSessionExpired(sessionObj)) {
+          let basicAuthStringAcad =
+            process.env.GATACA_APP_CFF +
+            ":" +
+            process.env.GATACA_PASS_CFF;
+          let buff = new Buffer(basicAuthStringAcad);
+          let base64data = buff.toString("base64");
+          let options = {
+            method: "POST",
+            url: constants.GATACA_CERTIFY_URL,
+            headers: {
+              Authorization: `Basic ${base64data}`,
+            },
+          };
+          if (!gatacaAuthTokenBoardingPass || isJwtTokenExpired(gatacaAuthTokenBoardingPass)) {
+            console.log("will get a new GATACA API tokent gatacaAuthTokenBoardingPass");
+            const gatacaTokenResponse = await axios.request(options);
+            gatacaAuthTokenBoardingPass = gatacaTokenResponse.headers.token;
+          }
+
+          options = {
+            method: "GET",
+            url: `${constants.GATACA_CHECK_ISSUE_STATUS_URL}/${sessionObj.sessionId}`,
+            headers: {
+              Authorization: `jwt ${gatacaAuthTokenBoardingPass}`,
+              "Content-Type": "application/json",
+            },
+          };
+
+          axios
+            .request(options)
+            .then(function (response) {
+              console.log(
+                `check status response.data for ` + sessionObj.sessionId
+              );
+              console.log(response.data.status);
+              if (response.data.status === "READY") {
+                activeBoardingPassSession = removeFromArray(
+                  activeBoardingPassSession,
+                  sessionObj
+                );
+                // send the message to the specific client (private message)
+                io.to(sessionObj.socketId).emit("message", {
+                  sessionId: sessionObj.sessionId,
+                  status: "READY",
+                  message: "credential Issued",
+                });
+              }
+            })
+            .catch(async function (error) {
+              // console.log(error.response);
+              console.log("Error getting activeBoardingPassSession" + sessionObj.sessionId);
+              if (
+                error.response &&
+                (error.response.status === 404 || error.response.status === 403)
+              ) {
+                console.log(
+                  "got 404 will remove session " + sessionObj.sessionId
+                );
+                if (activeBoardingPassSession) {
+                  activeBoardingPassSession = removeFromArray(
+                    activeBoardingPassSession,
+                    sessionObj
+                  );
+                  console.log(activeBoardingPassSession);
+                }
+              }
+            });
+        } else {
+          activeBoardingPassSession = removeFromArray(
+            activeBoardingPassSession,
+            sessionObj
+          );
+        }
+      });
+    }
+
+
   }, 3000);
 });

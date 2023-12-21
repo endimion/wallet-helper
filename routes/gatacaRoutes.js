@@ -5,7 +5,9 @@ import {
   makeGatacaVerificationRequestTicketCtrl,
   makeGatacaVerificationRequestStdAndAllianceCtrl,
   issueCtrl,
+  makeIssuanceOffer,
   getUserDetailsCtrl,
+  genericIssuanceCredential,
 } from "../controllers/gataca.js"; //
 import consts from "../constants.js";
 let constants = consts.consts;
@@ -35,6 +37,16 @@ gatacaRouter.post(
   makeGatacaVerificationRequestStdAndAllianceCtrl
 );
 
+gatacaRouter.get(
+  [
+    "/makeIssueOffer/:template",
+    `\/${constants.BASE_PATH}/makeIssueOffer/:template`,
+    "/socket.io/makeIssueOffer/:template",
+    "/gataca-helper/makeIssueOffer/:template",
+  ],
+  makeIssuanceOffer
+);
+
 gatacaRouter.post(
   [
     "/issue",
@@ -45,6 +57,18 @@ gatacaRouter.post(
   issueCtrl
 );
 
+
+
+// gatacaRouter.post(
+//   [
+//     "/issueCredential",
+//     `\/${constants.BASE_PATH}/issueCredential`,
+//     "/gataca-helper/issueCredential",
+//   ],
+//   genericIssuanceCredential
+// );
+
+
 // add a different end-point via which the client queries for the user data with the keycloak verificaiton session
 gatacaRouter.get(
   [
@@ -54,6 +78,8 @@ gatacaRouter.get(
   ],
   getUserDetailsCtrl
 );
+
+
 
 // Export the router object as a named export
 export { gatacaRouter };

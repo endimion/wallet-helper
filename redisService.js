@@ -51,6 +51,8 @@ const setOrUpdateSessionData = async (
 };
 
 const getSessionData = async (sessionId, variableName = null) => {
+  console.log("getSessionData", sessionId, variableName)
+
   return new Promise(async (resolve, reject) => {
     let client = await getClient();
     client.get(sessionId, (error, data) => {

@@ -65,8 +65,6 @@ const makeGatacaVerificationRequestStdAndAlliance = async (
   );
 };
 
-
-
 // const pollForVerificationResult = async (gatacaSessionId) => {
 //   console.log("pollAcademicIDVerificationResult");
 //   let gatacaUser = process.env.GATACA_APP_ACADEMIC_ID;
@@ -212,11 +210,82 @@ const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
           identifier: {
             schemeID: "European Student Identifier",
             value:
-              "urn:schac:europeanUniversityAllianceCode:int:euai:ERUA:"+userData.schacHomeOrganization,
-            id: "urn:schac:europeanUniversityAllianceCode:int:euai:ERUA:"+userData.schacHomeOrganization,
+              "urn:schac:europeanUniversityAllianceCode:int:euai:ERUA:" +
+              userData.schacHomeOrganization,
+            id:
+              "urn:schac:europeanUniversityAllianceCode:int:euai:ERUA:" +
+              userData.schacHomeOrganization,
           },
         },
         type: ["VerifiableCredential", "allianceIDCredential"],
+      },
+    ];
+  }
+
+  if (issueTemplate === "Boarding_Pass") {
+    basicAuthStr = basicAuthToken(
+      process.env.GATACA_APP_CFF,
+      process.env.GATACA_PASS_CFF
+    );
+    cacheVariable = "gataca_jwt_boardingpass";
+
+    const boardingPassCredentialData = [
+      {
+        credentialSubject: {
+          identifier: userData.firstName + " " + userData.lastName,
+          ticketQR: userData.qrCode,
+          ticketNumber: userData.ticketNumber,
+          tickerLet: userData.ticketLet,
+          lastName: userData.lastName,
+          firstName: userData.firstName,
+          seatType: userData.seatType,
+          seatNumber: userData.seatNumber,
+          departureDate: userData.departureDate,
+          departureTime: userData.departureTime,
+          arrivalDate: userData.arrivalDate,
+          arrivalTime: userData.arrivalTime,
+          arrivalPort: userData.arrivalPort,
+          vesselDescription: userData.vesselDescription,
+        },
+      },
+    ];
+
+    // console.log(userData.departureDate, userData.departureTime);
+
+    credentialData = [
+      {
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        credentialSubject: {
+          // identifier: [
+          //   {
+          //     schemeID: "European Student Identifier",
+          //     value: "userData.emailAddress",
+          //     id: "urn:schac:personalUniqueCode:int:esi:math.example.edu:xxxxxxxxxx",
+          //   },
+          // ],
+          // personalIdentifier:  "boarding-pass-test",
+          // firstName: "uboarding-pass-test",
+          // familyName: "boarding-pass-test",
+          identifier: userData.firstName + " " + userData.lastName,
+          ticketQR: userData.qrCode,
+          ticketNumber: userData.ticketNumber,
+          ticketLet: userData.ticketLet,
+          lastName: userData.lastName,
+          firstName: userData.firstName,
+          seatType: userData.seatType,
+          seatNumber: userData.seatNumber,
+          departureDate: userData.departureDate, //"2023-11-30", //userData.departureDate,
+          departureTime: userData.departureTime + ":00", //"13:07:34", //userData.departureTime + ":00",
+          arrivalDate: userData.arrivalDate, // "2023-11-30", //userData.arrivalDate,
+          arrivalTime: userData.arrivalTime + ":00", //"13:07:34", //userData.arrivalTime + ":00",
+          arrivalPort: userData.arrivalPort,
+          vesselDescription: userData.vesselDescription,
+        },
+        credentialSchema: {
+          id: "https://s3.eu-west-1.amazonaws.com/gataca.io/schemas/ferriesBoardingPassCredential.json",
+          type: "JsonSchema",
+        },
+        type: ["VerifiableCredential", "ferryBoardingPassCredential"],
       },
     ];
   }
@@ -256,13 +325,63 @@ const issueCredential = async (gatacaSessionId, userData, issueTemplate) => {
         res(response.data);
       })
       .catch(function (error) {
-        // console.error(error);
+        console.error(error);
         rej(error);
       });
   });
 };
 
+async function getGatacaOAuthToken(gatacaIssuanceTemplate) {
+  let basicAuthString;
+  let cacheVariable;
+
+  //TODO add the rest of the cases (other than Boarding_Pass)
+  if (gatacaIssuanceTemplate === "Boarding_Pass") {
+    basicAuthString =
+      process.env.GATACA_APP_CFF + ":" + process.env.GATACA_PASS_CFF;
+    cacheVariable = "gataca_jwt_cff";
+  }
+  let buff = new Buffer(basicAuthString);
+  let base64data = buff.toString("base64");
+  // console.log(base64data);
+  const options = {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${base64data}`,
+      tenant: process.env.UAEGEAN_TENANT,
+      ssiconfig: gatacaIssuanceTemplate,
+    },
+    next: {
+      revalidate: 0, // allways fetch a new token, no caching, next has some issues with this... //process.env.GATACA_OAUTH_EXPIRATION_TIME,
+    },
+  };
+  try {
+    const response = await fetch(process.env.GATACA_CERTIFY_URL, options);
+    if (response.ok) {
+      console.log(response.headers.get("token"));
+      return response.headers.get("token");
+    }
+  } catch (e) {
+    console.log(e);
+  }
+  return null;
+}
+
+function getSessionIdFromCredentialOfferUri(credOfferUri) {
+  let requrl = new URL(credOfferUri);
+  let credOffer = requrl.searchParams.get("credential_offer_uri");
+  if (credOffer) {
+    requrl = new URL(credOffer);
+    let sessionId = requrl.pathname.split("/").pop();
+    return sessionId;
+  }
+
+  return;
+}
+
 export {
+  getSessionIdFromCredentialOfferUri,
+  getGatacaOAuthToken,
   makeGatacaVerificationRequest,
   // pollForVerificationResult,
   issueCredential,
@@ -270,5 +389,5 @@ export {
   makeGatacaVerificationRequestTicket,
   pollForTicketVerificationResultOIDC,
   pollForVerificationResultOIDC,
-  makeGatacaVerificationRequestStdAndAlliance
+  makeGatacaVerificationRequestStdAndAlliance,
 };
